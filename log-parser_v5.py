@@ -104,7 +104,7 @@ class LogParserApp:
 
     def load_tenant_mapping(self):
         """Load tenant mapping from a CSV file to map Tenant ID to Account Name, with debug logging."""
-        file_path = "/Users/mike/python_scripts/accounts_w__tenant_ids.csv"
+        file_path = "/Users/mike/python_scripts/log_parser/accounts_w__tenant_ids.csv"
         try:
             print(f"\n=== Loading Tenant Mapping from: {file_path} ===\n")
 
