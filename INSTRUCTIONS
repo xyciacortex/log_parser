@@ -1,0 +1,7 @@
+# Instructions
+
+### In order to use this you must have the dependencies needed (see DEPENDENCIES.md), A master file to check for tenants against (accounts__v_tenant.csv), and the log_pattern.json file. 
+
+- Open the Log Parser application
+- Select "Load CSV" in the top left
+- Select which csv file you want to load
