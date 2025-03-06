@@ -234,17 +234,32 @@ class LogParserApp:
         return match.group(1) if match else ""
 
     def follow_service_logs(self):
-        selected_item = self.tree.focus()
+        selected_item = self.tree.focus()  # Get selected row ID
         if not selected_item or self.df is None:
             return
-        
-        row_values = self.tree.item(selected_item, "values")
+
+        row_values = self.tree.item(selected_item, "values")  # Get row data
         service_index = list(self.df.columns).index("Service")
-        service = row_values[service_index] if len(row_values) > service_index else ""
-        
-        if service:
-            filtered_df = self.df[self.df["Service"] == service].sort_values(by=["Date"], ascending=True)
+
+        if len(row_values) > service_index:
+            selected_service = row_values[service_index]  # Get the selected service
+            selected_date = row_values[0]  # Assuming the Date is the first column
+
+            # Filter logs by selected service
+            filtered_df = self.df[self.df["Service"] == selected_service].sort_values(by=["Date"], ascending=True)
+
+            # Update the display with filtered data
             self.display_data(filtered_df)
+
+            # Reselect the previously selected log in the filtered list
+            for item in self.tree.get_children():
+                item_values = self.tree.item(item, "values")
+                if item_values and item_values[0] == selected_date:  # Match by Date
+                    self.tree.selection_set(item)
+                    self.tree.focus(item)
+                    self.show_log_details(None)  # Ensure log details update
+                    break
+
 
     def update_tenant_dropdown(self):
         """Update the dropdown to display Account Names instead of Tenant IDs."""
