@@ -1,0 +1,29 @@
+{
+    "errors": [
+        "error",
+        "failed",
+        "critical",
+        "exception",
+        "denied",
+        "okta domain should not contain -admin",
+        "unauthorized access",
+        "database connection failed"
+    ],
+    "warnings": [
+        "warning",
+        "deprecated",
+        "slow",
+        "retry",
+        "possible misconfiguration"
+    ],
+    "status_codes": [
+        "400",
+        "401",
+        "403",
+        "404",
+        "500",
+        "502",
+        "503",
+        "504"
+    ]
+}
