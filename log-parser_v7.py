@@ -8,7 +8,6 @@ import json
 import pyperclip
 import platform
 
-
 def load_patterns():
     """Load error and warning patterns from a JSON file."""
     try:
@@ -22,92 +21,67 @@ def load_patterns():
 class LogParserApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Log Parser V6.2")
+        self.root.title("Log Parser V7")
         self.root.geometry("1700x800")
+
+        # ✅ Store reference to the logo so it doesn't get garbage collected
+        self.logo = tk.PhotoImage(file="/Users/mike/python_scripts/log_parser/logo300x300.png")  
+        self.root.iconphoto(True, self.logo)  # Works on Mac, Linux, and Windows
+
         self.patterns = load_patterns()  # Load patterns when the app starts
+        self.tenant_mapping = self.load_tenant_mapping()  # Load tenant mapping
 
-        # Load tenant mapping
-        self.tenant_mapping = self.load_tenant_mapping()
-
-        # Frame for buttons to align in a single row
+        # ✅ Create button frame at the top
         button_frame = tk.Frame(root)
-        button_frame.pack(pady=10, fill='x')
+        button_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
 
-        self.load_button = tk.Button(button_frame, text="Load CSV", command=self.load_csv)
-        self.load_button.pack(side=tk.LEFT, padx=5)
+        # 🔹 Define buttons with improved styling
+        buttons = [
+            ("Load CSV", self.load_csv),
+            ("Follow Service", self.follow_service_logs),
+            ("Follow Host", self.follow_host_logs),
+            ("Reset Filters", self.reset_logs),
+            ("Find Outliers", self.find_outliers),
+            ("Save to Notepad", self.save_to_notepad),
+            ("Clear Notepad", self.clear_notepad),
+            ("Export Selected", self.export_selected_logs)
+        ]
 
-        self.search_var = tk.StringVar()
-        self.search_entry = tk.Entry(button_frame, textvariable=self.search_var, width=30)
-        self.search_entry.pack(side=tk.LEFT, padx=5)
+        self.button_objects = []  # Store button references
+        for text, command in buttons:
+            btn = tk.Button(button_frame, text=text, command=command, font=("Ubuntu", 12), padx=10, pady=5)
+            btn.pack(side=tk.LEFT, padx=5)
+            btn.bind("<Enter>", self.on_enter)
+            btn.bind("<Leave>", self.on_leave)
+            self.button_objects.append(btn)
 
-        self.search_button = tk.Button(button_frame, text="Search", command=self.search_logs)
-        self.search_button.pack(side=tk.LEFT, padx=5)
+        # ✅ Create TreeView for logs (FULL WIDTH)
+        tree_frame = tk.Frame(root)
+        tree_frame.grid(row=1, column=0, sticky="nsew")
+        self.root.rowconfigure(1, weight=3)  # Give more space to logs
 
-        self.tenant_var = tk.StringVar()
-        self.tenant_dropdown = ttk.Combobox(button_frame, textvariable=self.tenant_var, state='readonly')
-        self.tenant_dropdown.pack(side=tk.LEFT, padx=5)
-        self.tenant_dropdown.bind("<<ComboboxSelected>>", self.select_tenant_logs)
-
-        self.follow_service_button = tk.Button(button_frame, text="Follow Service", command=self.follow_service_logs)
-        self.follow_service_button.pack(side=tk.LEFT, padx=5)
-
-        self.follow_host_button = tk.Button(button_frame, text="Follow Host", command=self.follow_host_logs)
-        self.follow_host_button.pack(side=tk.LEFT, padx=5)
-
-        self.reset_button = tk.Button(button_frame, text="Reset Filters", command=self.reset_logs)
-        self.reset_button.pack(side=tk.LEFT, padx=5)
-
-        self.outlier_button = tk.Button(button_frame, text="Find Outliers", command=self.find_outliers)
-        self.outlier_button.pack(side=tk.LEFT, padx=5)
-
-        # Create a frame to hold the Treeview and Log Details together
-        content_frame = tk.Frame(root)
-        content_frame.pack(expand=True, fill="both")
-
-        # Create a frame for the Treeview and scrollbar (LOG LIST)
-        tree_frame = tk.Frame(content_frame)
-        tree_frame.pack(expand=True, fill="both", side=tk.TOP)
-
-        # Create the Treeview
-        self.tree = ttk.Treeview(tree_frame, selectmode="extended")  # Allows multiple row selection
-
-        # Create a vertical scrollbar and attach it to the tree
+        self.tree = ttk.Treeview(tree_frame, selectmode="extended")
         tree_scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=tree_scrollbar.set)
 
-        # Pack the Treeview and its scrollbar together (Taking the Top Half)
         self.tree.pack(expand=True, fill="both", side=tk.LEFT)
         tree_scrollbar.pack(fill="y", side=tk.RIGHT)
 
-        # Create the Log Details window (Taking the Bottom Half)
-        self.log_details = scrolledtext.ScrolledText(content_frame, height=10, wrap=tk.WORD)
-        self.log_details.pack(expand=True, fill="both", padx=10, pady=10)
+        # ✅ Create Log Details area BELOW logs
+        self.log_details = scrolledtext.ScrolledText(root, height=10, wrap=tk.WORD, state=tk.DISABLED)
+        self.log_details.grid(row=2, column=0, sticky="nsew", padx=10, pady=10)
+        self.root.rowconfigure(2, weight=1)
 
-        self.sort_order = {}  # Dictionary to store sort state
-        self.df = None  # Placeholder for dataframe
-        self.original_df = None  # Store original data
-        self.outliers = set()  # 🛠 Initialize empty set for outliers
+        # ✅ Create Notepad BELOW Log Details
+        notepad_frame = tk.Frame(root, relief=tk.RAISED, bd=2)
+        notepad_frame.grid(row=3, column=0, sticky="nsew", padx=10, pady=5)
+        self.root.rowconfigure(3, weight=1)
 
-        # **Move tag configurations INSIDE `__init__` AFTER `self.tree` is created**
-        self.tree.tag_configure("error", background="red", foreground="white")
-        self.tree.tag_configure("warning", background="yellow", foreground="black")
-        self.tree.tag_configure("info", background="lightgreen", foreground="black")
-        self.tree.tag_configure("outlier", background="orange", foreground="black")  # Highlight outliers
-
-        # Bind selection events to show log details in the lower frame
-        self.tree.bind("<ButtonRelease-1>", self.show_log_details)
-        self.tree.bind("<KeyRelease-Up>", self.show_log_details)
-        self.tree.bind("<KeyRelease-Down>", self.show_log_details)
-
-        # Create a frame for the Notepad section
-        notepad_frame = tk.Frame(self.root, relief=tk.RAISED, bd=2)
-        notepad_frame.pack(expand=True, fill="both", padx=10, pady=5)
-
-        # Create a toolbar for formatting inside the notepad frame
+        # 🔹 Create Notepad Toolbar
         toolbar_frame = tk.Frame(notepad_frame)
         toolbar_frame.pack(fill="x", padx=5, pady=3)
 
-        # Toolbar buttons for text formatting (Icons can be added later)
+        # 🔹 Notepad Toolbar Buttons
         bold_icon = tk.Button(toolbar_frame, text="🅑", command=self.apply_bold, font=("Arial", 10, "bold"))
         bold_icon.pack(side=tk.LEFT, padx=5)
 
@@ -120,38 +94,104 @@ class LogParserApp:
         clear_icon = tk.Button(toolbar_frame, text="✖", command=self.clear_formatting)
         clear_icon.pack(side=tk.LEFT, padx=5)
 
-        # Notepad area below the toolbar
+        # 🔹 Create Notepad Area
         self.notepad = tk.Text(notepad_frame, height=8, wrap=tk.WORD)
         self.notepad.pack(expand=True, fill="both", padx=10, pady=5)
 
-        # Define highlight color in RTF
-        self.notepad.tag_configure("highlight", background="yellow", foreground="black")
+        # ✅ Configure Notepad Scrollbar
+        self.notepad_scroll = ttk.Scrollbar(notepad_frame, orient="vertical", command=self.notepad.yview)
+        self.notepad.configure(yscrollcommand=self.notepad_scroll.set)
+        self.notepad_scroll.pack(side=tk.RIGHT, fill="y")
 
-        # Define text formatting tags
-        self.notepad.tag_configure("bold", font=("TkDefaultFont", 10, "bold"))
-        self.notepad.tag_configure("italic", font=("TkDefaultFont", 10, "italic"))
-        self.notepad.tag_configure("highlight", background="yellow")
-
-        # History stack for undo feature
-        self.notepad_history = []
-
-        # Undo button (placed on the toolbar)
+        # ✅ Create Undo Button in Button Frame
         self.undo_button = tk.Button(button_frame, text="Undo", command=self.undo_last_entry, state=tk.NORMAL)
         self.undo_button.pack(side=tk.LEFT, padx=5)
-        self.update_undo_button_state()  # Ensure correct initial state
+        
+        # ✅ Configure Log Details Scrollbar
+        self.log_details_scroll = ttk.Scrollbar(root, orient="vertical", command=self.log_details.yview)
+        self.log_details.configure(yscrollcommand=self.log_details_scroll.set)
+        self.log_details_scroll.grid(row=2, column=1, sticky="ns")
 
-        copy_button = tk.Button(toolbar_frame, text="📋 Copy", command=self.copy_to_clipboard)
-        copy_button.pack(side=tk.LEFT, padx=5)
+        # **Move tag configurations INSIDE `__init__` AFTER `self.tree` is created**
+        self.tree.tag_configure("error", background="red", foreground="white")
+        self.tree.tag_configure("warning", background="yellow", foreground="black")
+        self.tree.tag_configure("info", background="lightgreen", foreground="black")
+        self.tree.tag_configure("outlier", background="orange", foreground="black")  # Highlight outliers
 
-        # Buttons to manage the notepad
-        self.save_to_notepad_button = tk.Button(button_frame, text="Save to Notepad", command=self.save_to_notepad)
-        self.save_to_notepad_button.pack(side=tk.LEFT, padx=5)
+        # Bind selection events to show log details in the lower frame
+        self.tree.bind("<ButtonRelease-1>", self.show_log_details)
+        self.tree.bind("<KeyRelease-Up>", self.show_log_details)
+        self.tree.bind("<KeyRelease-Down>", self.show_log_details)
 
-        self.clear_notepad_button = tk.Button(button_frame, text="Clear Notepad", command=self.clear_notepad)
-        self.clear_notepad_button.pack(side=tk.LEFT, padx=5)
+        # ✅ Allow everything to stretch properly
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(1, weight=3)  # Logs take most space
+        self.root.rowconfigure(2, weight=1)  # Log Details smaller
+        self.root.rowconfigure(3, weight=1)  # Notepad smaller
 
-        self.export_selected_button = tk.Button(button_frame, text="Export Selected", command=self.export_selected_logs)
-        self.export_selected_button.pack(side=tk.LEFT, padx=5)        
+        # ✅ Add Search Entry Field
+        self.search_var = tk.StringVar()
+        self.search_entry = tk.Entry(button_frame, textvariable=self.search_var, width=30, font=("Ubuntu", 12))
+        self.search_entry.pack(side=tk.LEFT, padx=5)
+
+        # ✅ Modify Search Button to actually perform search
+        self.search_button = tk.Button(button_frame, text="Search", command=self.search_logs, font=("Ubuntu", 12, "bold"), padx=10, pady=5)
+        self.search_button.pack(side=tk.LEFT, padx=5)
+        self.search_button.bind("<Enter>", self.on_enter)
+        self.search_button.bind("<Leave>", self.on_leave)
+
+        self.filter_error_button = tk.Button(button_frame, text="❌ Errors", command=lambda: self.filter_logs("error"))
+        self.filter_error_button.pack(side=tk.LEFT, padx=5)
+
+        self.filter_warning_button = tk.Button(button_frame, text="⚠ Warnings", command=lambda: self.filter_logs("warning"))
+        self.filter_warning_button.pack(side=tk.LEFT, padx=5)
+
+        self.filter_info_button = tk.Button(button_frame, text="ℹ Info", command=lambda: self.filter_logs("info"))
+        self.filter_info_button.pack(side=tk.LEFT, padx=5)
+
+        self.regex_var = tk.BooleanVar()
+        self.case_sensitive_var = tk.BooleanVar()
+
+        self.regex_check = tk.Checkbutton(button_frame, text="Regex", variable=self.regex_var)
+        self.regex_check.pack(side=tk.LEFT)
+
+        self.case_sensitive_check = tk.Checkbutton(button_frame, text="Case Sensitive", variable=self.case_sensitive_var)
+        self.case_sensitive_check.pack(side=tk.LEFT)
+
+        self.pin_button = tk.Button(button_frame, text="📌 Pin Log", command=self.pin_log)
+        self.pin_button.pack(side=tk.LEFT, padx=5)
+
+
+        # ✅ Initialize Undo Stack
+        self.notepad_history = []
+        self.update_undo_button_state()  # Ensure correct state
+
+    def on_enter(self, e):
+        """Change button color on hover."""
+        e.widget.config(bg="lightblue", fg="black")
+
+    def on_leave(self, e):
+        """Revert button color when leaving hover."""
+        e.widget.config(bg="SystemButtonFace", fg="black")
+
+    def update_undo_button_state(self):
+        """Update the Undo button color instead of removing the text."""
+        if self.notepad_history:
+            self.undo_button.config(state=tk.NORMAL, bg="SystemButtonFace", fg="black")  # Active
+        else:
+            self.undo_button.config(state=tk.NORMAL, bg="lightgray", fg="gray")  # Inactive, but text visible
+
+    def pin_log(self):
+        """Pin the selected log for quick access."""
+        selected_item = self.tree.focus()
+        if not selected_item:
+            messagebox.showwarning("No Selection", "Please select a log entry to pin.")
+            return  
+
+        row_values = self.tree.item(selected_item, "values")
+        if row_values:
+            pinned_text = ", ".join(row_values) + "\n"
+            self.notepad.insert(tk.END, "[📌 Pinned] " + pinned_text)
 
     def save_to_notepad(self):
         """Save selected log rows to the notepad in JSON format."""
@@ -183,6 +223,14 @@ class LogParserApp:
 
             self.notepad_history.append(logs_list)  # Track for undo
             self.update_undo_button_state()  # Enable Undo button
+
+    def filter_logs(self, severity):
+        """Filter logs based on severity level."""
+        if self.df is None:
+            return  
+
+        filtered_df = self.df[self.df.apply(lambda row: self.get_log_severity(row.values) == severity, axis=1)]
+        self.display_data(filtered_df)
 
     def undo_last_entry(self):
         """Undo only the last added log entry while keeping JSON format valid."""
@@ -459,22 +507,25 @@ class LogParserApp:
         return "info"
 
     def search_logs(self):
-        search_text = self.search_var.get().lower()
+        """Search logs with regex and case sensitivity options."""
+        search_text = self.search_var.get()
         if not search_text or self.df is None:
-            return
+            return  
 
-        # Split search text into multiple keywords (for AND search)
-        keywords = search_text.split()
+        regex_mode = self.regex_var.get()
+        case_sensitive = self.case_sensitive_var.get()
 
         # Exclude "Date" column from search
         search_columns = [col for col in self.df.columns if col != "Date"]
 
-        # Apply search condition to all columns except Date
-        filtered_df = self.df[
-            self.df.apply(lambda row: all(
-                any(keyword in str(row[col]).lower() for col in search_columns) for keyword in keywords
-            ), axis=1)
-        ]
+        if regex_mode:
+            pattern = re.compile(search_text, 0 if case_sensitive else re.IGNORECASE)
+            filtered_df = self.df[self.df.apply(lambda row: any(pattern.search(str(row[col])) for col in search_columns), axis=1)]
+        else:
+            if not case_sensitive:
+                search_text = search_text.lower()
+            filtered_df = self.df[self.df.apply(lambda row: any(search_text in str(row[col]).lower() for col in search_columns), axis=1)]
+
         self.display_data(filtered_df)
 
     def select_tenant_logs(self, event):
@@ -553,34 +604,34 @@ class LogParserApp:
             self.display_data(filtered_df)
 
     def show_log_details(self, event):
-        selected_item = self.tree.focus()  # Get selected row
+        """Display selected log details with syntax highlighting for JSON."""
+        selected_item = self.tree.focus()  
         if not selected_item:
             return  
 
-        row_values = self.tree.item(selected_item, "values")  # Get row data
+        row_values = self.tree.item(selected_item, "values")  
         if not row_values:
             return  
 
         try:
-            # Identify the correct column index for "Message"
             message_index = list(self.df.columns).index("Message")
-            if len(row_values) > message_index:
-                message = row_values[message_index]
-            else:
-                message = "Message column out of range."
+            message = row_values[message_index] if len(row_values) > message_index else "Message column out of range."
 
-            # Format JSON logs properly
-            if isinstance(message, str) and message.startswith("{") and message.endswith("}"):
-                try:
-                    message = json.dumps(json.loads(message), indent=2)
-                except json.JSONDecodeError:
-                    pass  
-
-            # 🔹 Ensure Log Message Frame is **Read-Only**
-            self.log_details.configure(state=tk.NORMAL)  # Temporarily enable
+            # Detect JSON format and highlight it
+            self.log_details.configure(state=tk.NORMAL)
             self.log_details.delete("1.0", tk.END)
-            self.log_details.insert(tk.END, message)
-            self.log_details.configure(state=tk.DISABLED)  # 🔒 Disable editing after inserting
+
+            if message.startswith("{") and message.endswith("}"):  # JSON Detection
+                try:
+                    formatted_json = json.dumps(json.loads(message), indent=2)
+                    self.log_details.insert(tk.END, formatted_json, "json")  
+                    self.log_details.tag_configure("json", foreground="blue")  
+                except json.JSONDecodeError:
+                    self.log_details.insert(tk.END, message)
+            else:
+                self.log_details.insert(tk.END, message)
+
+            self.log_details.configure(state=tk.DISABLED)
 
         except Exception as e:
             print(f"Error displaying log details: {e}")
@@ -590,8 +641,8 @@ class LogParserApp:
         ascending = self.sort_order.get(col, True)
         self.df = self.df.sort_values(by=[col], ascending=ascending)
         self.sort_order[col] = not ascending
-        self.display_data(self.df)
-
+     
+          
 if __name__ == "__main__":
     root = tk.Tk()
     app = LogParserApp(root)
