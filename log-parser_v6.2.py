@@ -6,6 +6,8 @@ import re
 from tkinter import messagebox
 import json
 import pyperclip
+import platform
+
 
 def load_patterns():
     """Load error and warning patterns from a JSON file."""
@@ -130,12 +132,16 @@ class LogParserApp:
         self.notepad.tag_configure("italic", font=("TkDefaultFont", 10, "italic"))
         self.notepad.tag_configure("highlight", background="yellow")
 
-                # Copy button to copy formatted text
+        # History stack for undo feature
+        self.notepad_history = []
+
+        # Undo button (placed on the toolbar)
+        self.undo_button = tk.Button(button_frame, text="Undo", command=self.undo_last_entry, state=tk.NORMAL)
+        self.undo_button.pack(side=tk.LEFT, padx=5)
+        self.update_undo_button_state()  # Ensure correct initial state
+
         copy_button = tk.Button(toolbar_frame, text="📋 Copy", command=self.copy_to_clipboard)
         copy_button.pack(side=tk.LEFT, padx=5)
-
-        self.copy_button = tk.Button(button_frame, text="Copy", command=self.copy_to_clipboard)
-        self.copy_button.pack(side=tk.LEFT, padx=5)
 
         # Buttons to manage the notepad
         self.save_to_notepad_button = tk.Button(button_frame, text="Save to Notepad", command=self.save_to_notepad)
@@ -148,17 +154,59 @@ class LogParserApp:
         self.export_selected_button.pack(side=tk.LEFT, padx=5)        
 
     def save_to_notepad(self):
-        """Save selected log rows to the notepad."""
+        """Save selected log rows to the notepad in JSON format."""
         selected_items = self.tree.selection()  # Get all selected rows
         if not selected_items:
             messagebox.showwarning("No Selection", "Please select at least one log entry.")
             return
 
+        logs_list = []  # Store logs as JSON objects
+
         for item in selected_items:
             row_values = self.tree.item(item, "values")
             if row_values:
-                log_text = ", ".join(row_values)
-                self.notepad.insert(tk.END, log_text + "\n")  # Append each selected log to the notepad
+                log_entry = {col: row_values[idx] for idx, col in enumerate(self.df.columns)}  # Create JSON entry
+                logs_list.append(log_entry)
+
+        if logs_list:
+            current_text = self.notepad.get("1.0", tk.END).strip()
+            try:
+                existing_data = json.loads(current_text) if current_text else []
+            except json.JSONDecodeError:
+                existing_data = []  # If existing data is invalid, reset it
+
+            existing_data.extend(logs_list)  # Append new logs to existing JSON
+
+            formatted_json = json.dumps(existing_data, indent=2)  # Pretty print JSON
+            self.notepad.delete("1.0", tk.END)
+            self.notepad.insert(tk.END, formatted_json)
+
+            self.notepad_history.append(logs_list)  # Track for undo
+            self.update_undo_button_state()  # Enable Undo button
+
+    def undo_last_entry(self):
+        """Undo only the last added log entry while keeping JSON format valid."""
+        if not self.notepad_history:
+            return
+
+        last_entries = self.notepad_history.pop()  # Get the last inserted log(s)
+
+        current_text = self.notepad.get("1.0", tk.END).strip()
+        try:
+            existing_data = json.loads(current_text) if current_text else []
+        except json.JSONDecodeError:
+            existing_data = []  # Reset if data is corrupted
+
+        # Remove the last added logs while preserving the rest
+        for entry in last_entries:
+            if entry in existing_data:
+                existing_data.remove(entry)
+
+        formatted_json = json.dumps(existing_data, indent=2)  # Keep JSON formatted
+        self.notepad.delete("1.0", tk.END)
+        self.notepad.insert(tk.END, formatted_json)
+
+        self.update_undo_button_state()  # Update Undo button
 
     def clear_notepad(self):
         """Clear all entries from the notepad."""
@@ -186,6 +234,13 @@ class LogParserApp:
 
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save file:\n{e}")
+
+    def update_undo_button_state(self):
+        """Update the Undo button color instead of removing the text."""
+        if self.notepad_history:
+            self.undo_button.config(state=tk.NORMAL, bg="SystemButtonFace", fg="black")  # Active
+        else:
+            self.undo_button.config(state=tk.NORMAL, bg="lightgray", fg="gray")  # Inactive, but text visible
 
     def apply_bold(self):
         """Apply bold formatting to selected text."""
@@ -221,52 +276,16 @@ class LogParserApp:
         self.notepad.tag_remove("highlight", "1.0", tk.END)
 
     def copy_to_clipboard(self):
-        """Copy formatted text from the notepad to the clipboard as RTF (properly formatted)."""
+        """Copy plain text from the notepad to the clipboard."""
         try:
-            # Start RTF document with color table (yellow highlight)
-            rtf_text = r"{\rtf1\ansi\deff0 {\colortbl ;\red255\green255\blue0;}"  # Define color table
-            rtf_text += "\n"
+            text_content = self.notepad.get("1.0", tk.END).strip()
+            if not text_content:
+                messagebox.showwarning("Copy Error", "No text to copy!")
+                return
 
-            index = "1.0"
-            while True:
-                # Get the next character
-                next_index = self.notepad.index(f"{index} +1c")
-                if next_index == index:
-                    break  # End of text
+            pyperclip.copy(text_content)  # Copy as plain text
+            messagebox.showinfo("Copied!", "Text copied to clipboard successfully!")
 
-                text_segment = self.notepad.get(index, next_index)
-                tags = self.notepad.tag_names(index)
-
-                # Apply RTF formatting
-                if "bold" in tags:
-                    rtf_text += r"\b "
-                if "italic" in tags:
-                    rtf_text += r"\i "
-                if "highlight" in tags:
-                    rtf_text += r"\highlight1 "
-
-                # Escape special characters for RTF
-                text_segment = text_segment.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
-                rtf_text += text_segment
-
-                # Reset formatting after this segment
-                if "bold" in tags:
-                    rtf_text += r"\b0 "
-                if "italic" in tags:
-                    rtf_text += r"\i0 "
-                if "highlight" in tags:
-                    rtf_text += r"\highlight0 "
-
-                index = next_index
-
-            rtf_text += "}"  # Close RTF document
-
-            # Store properly formatted RTF to clipboard
-            self.root.clipboard_clear()
-            self.root.clipboard_append(rtf_text, type="RTF")
-            self.root.update()
-
-            messagebox.showinfo("Copied!", "Formatted text copied as RTF to clipboard.")
         except Exception as e:
             messagebox.showerror("Copy Error", f"Failed to copy text: {e}")
 
@@ -565,8 +584,6 @@ class LogParserApp:
 
         except Exception as e:
             print(f"Error displaying log details: {e}")
-
-
 
     def sort_column(self, col):
         """Sort columns when clicking headers."""
