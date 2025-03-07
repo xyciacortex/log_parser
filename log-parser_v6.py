@@ -96,7 +96,62 @@ class LogParserApp:
         self.tree.bind("<KeyRelease-Up>", self.show_log_details)
         self.tree.bind("<KeyRelease-Down>", self.show_log_details)
 
+                # Frame for the notepad
+        notepad_frame = tk.Frame(content_frame)
+        notepad_frame.pack(fill="both", expand=True)
 
+        # Notepad area to store selected logs
+        self.notepad = scrolledtext.ScrolledText(notepad_frame, height=8, wrap=tk.WORD)
+        self.notepad.pack(expand=True, fill="both", padx=10, pady=10)
+
+        # Buttons to manage the notepad
+        self.save_to_notepad_button = tk.Button(button_frame, text="Save to Notepad", command=self.save_to_notepad)
+        self.save_to_notepad_button.pack(side=tk.LEFT, padx=5)
+
+        self.clear_notepad_button = tk.Button(button_frame, text="Clear Notepad", command=self.clear_notepad)
+        self.clear_notepad_button.pack(side=tk.LEFT, padx=5)
+
+        self.export_selected_button = tk.Button(button_frame, text="Export Selected", command=self.export_selected_logs)
+        self.export_selected_button.pack(side=tk.LEFT, padx=5)
+
+    def save_to_notepad(self):
+        """Save the selected log row to the notepad."""
+        selected_item = self.tree.focus()
+        if not selected_item:
+            messagebox.showwarning("No Selection", "Please select a log to add to the notepad.")
+            return
+
+        row_values = self.tree.item(selected_item, "values")
+        if not row_values:
+            return
+
+        log_text = ", ".join(row_values)  # Convert row to a readable format
+        self.notepad.insert(tk.END, log_text + "\n")  # Add to notepad
+
+    def clear_notepad(self):
+        """Clear all entries from the notepad."""
+        self.notepad.delete("1.0", tk.END)
+
+    def export_selected_logs(self):
+        """Export logs from the notepad to a CSV file."""
+        notepad_content = self.notepad.get("1.0", tk.END).strip()
+        if not notepad_content:
+            messagebox.showwarning("No Logs", "No logs to export. Please add logs to the notepad first.")
+            return
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv")],
+            title="Save Selected Logs"
+        )
+
+        if file_path:
+            # Convert notepad content to a list of rows
+            rows = [line.split(", ") for line in notepad_content.split("\n") if line.strip()]
+            df = pd.DataFrame(rows, columns=self.df.columns)  # Use the same column names as the main log
+
+            df.to_csv(file_path, index=False)
+            messagebox.showinfo("Success", f"Selected logs saved to {file_path}")
 
     def load_csv(self):
         """Load logs from a CSV file, extract Tenant IDs, and replace them with Account Names."""
@@ -234,7 +289,6 @@ class LogParserApp:
         # Display only outliers
         self.display_data(outlier_df, highlight_outliers=True)
 
-
     def is_outlier(self, row_values):
         """Check if a log message is an outlier (rare occurrence)."""
         message_index = list(self.df.columns).index("Message")
@@ -287,7 +341,6 @@ class LogParserApp:
         ]
         self.display_data(filtered_df)
 
-
     def select_tenant_logs(self, event):
         selected_tenant = self.tenant_var.get()
         if self.df is None or selected_tenant == "Select Tenant":
@@ -327,7 +380,6 @@ class LogParserApp:
                     self.tree.focus(item)
                     self.show_log_details(None)  # Ensure log details update
                     break
-
 
     def update_tenant_dropdown(self):
         """Update the dropdown to display Account Names instead of Tenant IDs."""
