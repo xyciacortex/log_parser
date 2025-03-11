@@ -18,11 +18,14 @@ def load_patterns():
         return {"errors": ["error", "failed", "critical", "exception", "denied"], 
                 "warnings": ["warning", "deprecated", "slow", "retry"]}
 
+
 class LogParserApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Log Parser V7")
-        self.root.geometry("1700x800")
+        self.root.geometry("2300x800")
+        
+        print("Initializing LogParserApp...")  # Debugging print
 
         # ✅ Store reference to the logo so it doesn't get garbage collected
         self.logo = tk.PhotoImage(file="/Users/mike/python_scripts/log_parser/logo300x300.png")  
@@ -31,29 +34,69 @@ class LogParserApp:
         self.patterns = load_patterns()  # Load patterns when the app starts
         self.tenant_mapping = self.load_tenant_mapping()  # Load tenant mapping
 
-        # ✅ Create button frame at the top
-        button_frame = tk.Frame(root)
-        button_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        # Create a container frame for the toolbar
+        toolbar_frame = tk.Frame(root)
+        toolbar_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
 
-        # 🔹 Define buttons with improved styling
-        buttons = [
-            ("Load CSV", self.load_csv),
-            ("Follow Service", self.follow_service_logs),
-            ("Follow Host", self.follow_host_logs),
-            ("Reset Filters", self.reset_logs),
-            ("Find Outliers", self.find_outliers),
-            ("Save to Notepad", self.save_to_notepad),
-            ("Clear Notepad", self.clear_notepad),
-            ("Export Selected", self.export_selected_logs)
-        ]
+        # Create the two button rows inside the toolbar
+        button_frame_top = tk.Frame(toolbar_frame)
+        button_frame_top.pack(fill="x", padx=5, pady=2)
 
-        self.button_objects = []  # Store button references
-        for text, command in buttons:
-            btn = tk.Button(button_frame, text=text, command=command, font=("Ubuntu", 12), padx=10, pady=5)
-            btn.pack(side=tk.LEFT, padx=5)
-            btn.bind("<Enter>", self.on_enter)
-            btn.bind("<Leave>", self.on_leave)
-            self.button_objects.append(btn)
+        button_frame_bottom = tk.Frame(toolbar_frame)
+        button_frame_bottom.pack(fill="x", padx=5, pady=2)
+
+        if hasattr(self, "buttons_initialized"):  
+            print("Buttons already initialized. Skipping duplication.")
+        else:
+            self.buttons_initialized = True  # Mark buttons as initialized    
+
+        # 🔹 FIRST ROW: Load CSV, Search Box, Search Button, Case-Sensitive, Regex
+        self.load_button = tk.Button(button_frame_top, text="Load CSV", command=self.load_csv, font=("Ubuntu", 12), padx=10, pady=5)
+        self.load_button.pack(side=tk.LEFT, padx=5)
+
+        self.search_var = tk.StringVar()
+        self.search_entry = tk.Entry(button_frame_top, textvariable=self.search_var, width=30, font=("Ubuntu", 12))
+        self.search_entry.pack(side=tk.LEFT, padx=5)
+
+        self.search_button = tk.Button(button_frame_top, text="Search", command=self.search_logs, font=("Ubuntu", 12), padx=10, pady=5)
+        self.search_button.pack(side=tk.LEFT, padx=5)
+
+        self.case_sensitive = tk.BooleanVar()
+        self.case_checkbox = tk.Checkbutton(button_frame_top, text="Case-Sensitive", variable=self.case_sensitive)
+        self.case_checkbox.pack(side=tk.LEFT, padx=5)
+
+        self.regex_search = tk.BooleanVar()
+        self.regex_checkbox = tk.Checkbutton(button_frame_top, text="Regex", variable=self.regex_search)
+        self.regex_checkbox.pack(side=tk.LEFT, padx=5)
+    
+        # 🔹 SECOND ROW: Reset Filters, Follow Service, Follow Host, Find Outliers, Save to Notepad, Undo, Clear Notepad, Export Selected
+        self.reset_button = tk.Button(button_frame_bottom, text="Reset Filters", command=self.reset_logs, font=("Ubuntu", 12), padx=10, pady=5)
+        self.reset_button.pack(side=tk.LEFT, padx=5)
+
+        self.follow_service_button = tk.Button(button_frame_bottom, text="Follow Service", command=self.follow_service_logs, font=("Ubuntu", 12), padx=10, pady=5)
+        self.follow_service_button.pack(side=tk.LEFT, padx=5)
+
+        self.follow_host_button = tk.Button(button_frame_bottom, text="Follow Host", command=self.follow_host_logs, font=("Ubuntu", 12), padx=10, pady=5)
+        self.follow_host_button.pack(side=tk.LEFT, padx=5)
+
+        self.outlier_button = tk.Button(button_frame_bottom, text="Find Outliers", command=self.find_outliers, font=("Ubuntu", 12), padx=10, pady=5)
+        self.outlier_button.pack(side=tk.LEFT, padx=5)
+
+        self.save_to_notepad_button = tk.Button(button_frame_bottom, text="Save to Notepad", command=self.save_to_notepad, font=("Ubuntu", 12), padx=10, pady=5)
+        self.save_to_notepad_button.pack(side=tk.LEFT, padx=5)
+
+        self.undo_button = tk.Button(button_frame_bottom, text="Undo", command=self.undo_last_entry, font=("Ubuntu", 12), padx=10, pady=5)
+        self.undo_button.pack(side=tk.LEFT, padx=5)
+
+        self.clear_notepad_button = tk.Button(button_frame_bottom, text="Clear Notepad", command=self.clear_notepad, font=("Ubuntu", 12), padx=10, pady=5)
+        self.clear_notepad_button.pack(side=tk.LEFT, padx=5)
+
+        self.export_selected_button = tk.Button(button_frame_bottom, text="Export Selected", command=self.export_selected_logs, font=("Ubuntu", 12), padx=10, pady=5)
+        self.export_selected_button.pack(side=tk.LEFT, padx=5)
+
+        # ✅ Initialize Undo Stack AFTER defining undo_button
+        self.notepad_history = []
+        self.update_undo_button_state()
 
         # ✅ Create TreeView for logs (FULL WIDTH)
         tree_frame = tk.Frame(root)
@@ -78,20 +121,20 @@ class LogParserApp:
         self.root.rowconfigure(3, weight=1)
 
         # 🔹 Create Notepad Toolbar
-        toolbar_frame = tk.Frame(notepad_frame)
-        toolbar_frame.pack(fill="x", padx=5, pady=3)
+        notepad_toolbar = tk.Frame(notepad_frame)
+        notepad_toolbar.pack(fill="x", padx=5, pady=3)
 
         # 🔹 Notepad Toolbar Buttons
-        bold_icon = tk.Button(toolbar_frame, text="🅑", command=self.apply_bold, font=("Arial", 10, "bold"))
+        bold_icon = tk.Button(notepad_toolbar, text="🅑", command=self.apply_bold, font=("Arial", 10, "bold"))
         bold_icon.pack(side=tk.LEFT, padx=5)
 
-        italic_icon = tk.Button(toolbar_frame, text="𝑰", command=self.apply_italics, font=("Arial", 10, "italic"))
+        italic_icon = tk.Button(notepad_toolbar, text="𝑰", command=self.apply_italics, font=("Arial", 10, "italic"))
         italic_icon.pack(side=tk.LEFT, padx=5)
 
-        highlight_icon = tk.Button(toolbar_frame, text="🟨", command=self.apply_highlight)
+        highlight_icon = tk.Button(notepad_toolbar, text="🟨", command=self.apply_highlight)
         highlight_icon.pack(side=tk.LEFT, padx=5)
 
-        clear_icon = tk.Button(toolbar_frame, text="✖", command=self.clear_formatting)
+        clear_icon = tk.Button(notepad_toolbar, text="✖", command=self.clear_formatting)
         clear_icon.pack(side=tk.LEFT, padx=5)
 
         # 🔹 Create Notepad Area
@@ -103,19 +146,14 @@ class LogParserApp:
         self.notepad.configure(yscrollcommand=self.notepad_scroll.set)
         self.notepad_scroll.pack(side=tk.RIGHT, fill="y")
 
-        # ✅ Create Undo Button in Button Frame
-        self.undo_button = tk.Button(button_frame, text="Undo", command=self.undo_last_entry, state=tk.NORMAL)
-        self.undo_button.pack(side=tk.LEFT, padx=5)
-        
         # ✅ Configure Log Details Scrollbar
         self.log_details_scroll = ttk.Scrollbar(root, orient="vertical", command=self.log_details.yview)
         self.log_details.configure(yscrollcommand=self.log_details_scroll.set)
         self.log_details_scroll.grid(row=2, column=1, sticky="ns")
 
-        # **Move tag configurations INSIDE `__init__` AFTER `self.tree` is created**
         self.tree.tag_configure("error", background="red", foreground="white")
-        self.tree.tag_configure("warning", background="yellow", foreground="black")
-        self.tree.tag_configure("info", background="lightgreen", foreground="black")
+        self.tree.tag_configure("warning", background="orange", foreground="black")  # More visible
+        self.tree.tag_configure("info", background="lightblue", foreground="black")  # Brighter
         self.tree.tag_configure("outlier", background="orange", foreground="black")  # Highlight outliers
 
         # Bind selection events to show log details in the lower frame
@@ -128,39 +166,6 @@ class LogParserApp:
         self.root.rowconfigure(1, weight=3)  # Logs take most space
         self.root.rowconfigure(2, weight=1)  # Log Details smaller
         self.root.rowconfigure(3, weight=1)  # Notepad smaller
-
-        # ✅ Add Search Entry Field
-        self.search_var = tk.StringVar()
-        self.search_entry = tk.Entry(button_frame, textvariable=self.search_var, width=30, font=("Ubuntu", 12))
-        self.search_entry.pack(side=tk.LEFT, padx=5)
-
-        # ✅ Modify Search Button to actually perform search
-        self.search_button = tk.Button(button_frame, text="Search", command=self.search_logs, font=("Ubuntu", 12, "bold"), padx=10, pady=5)
-        self.search_button.pack(side=tk.LEFT, padx=5)
-        self.search_button.bind("<Enter>", self.on_enter)
-        self.search_button.bind("<Leave>", self.on_leave)
-
-        self.filter_error_button = tk.Button(button_frame, text="❌ Errors", command=lambda: self.filter_logs("error"))
-        self.filter_error_button.pack(side=tk.LEFT, padx=5)
-
-        self.filter_warning_button = tk.Button(button_frame, text="⚠ Warnings", command=lambda: self.filter_logs("warning"))
-        self.filter_warning_button.pack(side=tk.LEFT, padx=5)
-
-        self.filter_info_button = tk.Button(button_frame, text="ℹ Info", command=lambda: self.filter_logs("info"))
-        self.filter_info_button.pack(side=tk.LEFT, padx=5)
-
-        self.regex_var = tk.BooleanVar()
-        self.case_sensitive_var = tk.BooleanVar()
-
-        self.regex_check = tk.Checkbutton(button_frame, text="Regex", variable=self.regex_var)
-        self.regex_check.pack(side=tk.LEFT)
-
-        self.case_sensitive_check = tk.Checkbutton(button_frame, text="Case Sensitive", variable=self.case_sensitive_var)
-        self.case_sensitive_check.pack(side=tk.LEFT)
-
-        self.pin_button = tk.Button(button_frame, text="📌 Pin Log", command=self.pin_log)
-        self.pin_button.pack(side=tk.LEFT, padx=5)
-
 
         # ✅ Initialize Undo Stack
         self.notepad_history = []
@@ -641,7 +646,6 @@ class LogParserApp:
         ascending = self.sort_order.get(col, True)
         self.df = self.df.sort_values(by=[col], ascending=ascending)
         self.sort_order[col] = not ascending
-     
           
 if __name__ == "__main__":
     root = tk.Tk()
