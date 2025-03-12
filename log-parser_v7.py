@@ -18,12 +18,11 @@ def load_patterns():
         return {"errors": ["error", "failed", "critical", "exception", "denied"], 
                 "warnings": ["warning", "deprecated", "slow", "retry"]}
 
-
 class LogParserApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Log Parser V7")
-        self.root.geometry("2300x800")
+        self.root.geometry("1700x800")
         
         print("Initializing LogParserApp...")  # Debugging print
 
@@ -513,25 +512,36 @@ class LogParserApp:
 
     def search_logs(self):
         """Search logs with regex and case sensitivity options."""
-        search_text = self.search_var.get()
+        search_text = self.search_var.get().strip()
         if not search_text or self.df is None:
+            print("🔍 No search text entered or no logs loaded.")
             return  
 
-        regex_mode = self.regex_var.get()
-        case_sensitive = self.case_sensitive_var.get()
+        regex_mode = self.regex_search.get()  # Ensure correct variable
+        case_sensitive = self.case_sensitive.get()  # Ensure correct variable
+
+        print(f"🔎 Searching for: '{search_text}' (Regex: {regex_mode}, Case-Sensitive: {case_sensitive})")
 
         # Exclude "Date" column from search
         search_columns = [col for col in self.df.columns if col != "Date"]
 
         if regex_mode:
-            pattern = re.compile(search_text, 0 if case_sensitive else re.IGNORECASE)
-            filtered_df = self.df[self.df.apply(lambda row: any(pattern.search(str(row[col])) for col in search_columns), axis=1)]
+            try:
+                pattern = re.compile(search_text, 0 if case_sensitive else re.IGNORECASE)
+                filtered_df = self.df[self.df.apply(
+                    lambda row: any(pattern.search(str(row[col])) for col in search_columns), axis=1)]
+            except re.error as e:
+                messagebox.showerror("Regex Error", f"Invalid regex pattern: {e}")
+                return
         else:
             if not case_sensitive:
                 search_text = search_text.lower()
-            filtered_df = self.df[self.df.apply(lambda row: any(search_text in str(row[col]).lower() for col in search_columns), axis=1)]
+            filtered_df = self.df[self.df.apply(
+                lambda row: any(search_text in str(row[col]).lower() for col in search_columns), axis=1)]
 
+        print(f"✅ Search found {len(filtered_df)} matching logs.")
         self.display_data(filtered_df)
+
 
     def select_tenant_logs(self, event):
         selected_tenant = self.tenant_var.get()
