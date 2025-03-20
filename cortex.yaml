@@ -6,6 +6,4 @@ info:
   x-cortex-type: service
   x-cortex-git:
     github:
-      repository: cortex/docs
-      basepath: myService
-      alias: log_parser
+      repository: xyciacortex/log_parser
