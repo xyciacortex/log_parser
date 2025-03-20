@@ -4,3 +4,8 @@ info:
   description: This is my cool service!
   x-cortex-tag: my-service
   x-cortex-type: service
+  x-cortex-git:
+    github:
+      repository: cortex/docs
+      basepath: myService
+      alias: log_parser
